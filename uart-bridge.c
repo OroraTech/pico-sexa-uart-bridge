@@ -20,8 +20,6 @@
 #define MIN(a, b) ((a > b) ? b : a)
 #endif /* MIN */
 
-#define LED_PIN 25
-
 // might as well use our RAM
 #define BUFFER_SIZE 2560
 
@@ -35,6 +33,7 @@ typedef struct {
 	uint8_t tx_pin;
 	uint8_t rx_pin;
 	uint    sm;
+	uint8_t led_act_pin;
 } uart_id_t;
 
 typedef struct {
@@ -50,6 +49,7 @@ typedef struct {
 	uint32_t usb_to_uart_pos;
 	uint32_t usb_to_uart_snd;
 	mutex_t usb_mtx;
+	uint32_t led_act_ticker;
 } uart_data_t;
 
 uart_id_t UART_ID[CFG_TUD_CDC] = {
@@ -57,30 +57,36 @@ uart_id_t UART_ID[CFG_TUD_CDC] = {
 		.inst = uart0,
 		.tx_pin = 0,
 		.rx_pin = 1,
+		.led_act_pin = 2,
 	},{
 		.inst = uart1,
 		.tx_pin = 4,
 		.rx_pin = 5,
+		.led_act_pin = 3
 	},{
 		.inst = 0,
 		.tx_pin = 8,
 		.rx_pin = 9,
 		.sm = 0,
+		.led_act_pin = 6,
 	},{
 		.inst = 0,
 		.tx_pin = 12,
 		.rx_pin = 13,
 		.sm = 1,
+		.led_act_pin = 7,
 	},{
 		.inst = 0,
 		.tx_pin = 16,
 		.rx_pin = 17,
 		.sm = 2,
+		.led_act_pin = 10,
 	},{
 		.inst = 0,
 		.tx_pin = 20,
 		.rx_pin = 21,
 		.sm = 3,
+		.led_act_pin = 11,
 	}
 };
 
@@ -229,18 +235,14 @@ void core1_entry(void)
 
 	while (1) {
 		int itf;
-		int con = 0;
 
 		tud_task();
 
 		for (itf = 0; itf < CFG_TUD_CDC; itf++) {
 			if (tud_cdc_n_connected(itf)) {
-				con = 1;
 				usb_cdc_process(itf);
 			}
 		}
-
-		gpio_put(LED_PIN, con);
 	}
 }
 
@@ -255,6 +257,7 @@ void uart_read_bytes(uint8_t itf)
 					ud->uart_rx_pos < BUFFER_SIZE) {
 				ud->uart_rx_buffer[ud->uart_rx_pos] = uart_getc(ui->inst);
 				ud->uart_rx_pos++;
+				ud->led_act_ticker = 500;
 			}
 		}
 	} else {
@@ -263,6 +266,7 @@ void uart_read_bytes(uint8_t itf)
 			      ud->uart_rx_pos < BUFFER_SIZE) {
 				ud->uart_rx_buffer[ud->uart_rx_pos] =  uart_rx_program_getc(pio0, ui->sm);
 				ud->uart_rx_pos++;
+				ud->led_act_ticker = 500;
 			}
 		}
 	}
@@ -275,15 +279,25 @@ void uart_read_bytes(uint8_t itf)
 		ud->uart_rx_pos = 0;
 		mutex_exit(&ud->uart_mtx);
 	}
+
+	if (ud->led_act_ticker) {
+		gpio_put(ui->led_act_pin, 1);
+		ud->led_act_ticker--;
+	} else {
+		gpio_put(ui->led_act_pin, 0);
+	}
 }
 
 void uart_write_bytes(uint8_t itf) {
+	const uart_id_t *ui = &UART_ID[itf];
 	uart_data_t *ud = &UART_DATA[itf];
 
 	// Try to get the usb_mutex and don't block if we cannot get it, we'll TX the data next passs
 	if ((ud->usb_to_uart_pos) && (ud->usb_to_uart_snd < ud->usb_to_uart_pos) &&
 	    mutex_try_enter(&ud->usb_mtx, NULL)) {
 		const uart_id_t *ui = &UART_ID[itf];
+
+		ud->led_act_ticker = 500;
 
 		if (ui->inst != 0){
 			while (uart_is_writable(ui->inst)&&(ud->usb_to_uart_snd < ud->usb_to_uart_pos)) {
@@ -305,6 +319,12 @@ void uart_write_bytes(uint8_t itf) {
 			ud->usb_to_uart_snd = 0;
 		}
 		mutex_exit(&ud->usb_mtx);
+	}
+	if (ud->led_act_ticker) {
+		gpio_put(ui->led_act_pin, 1);
+		ud->led_act_ticker--;
+	} else {
+		gpio_put(ui->led_act_pin, 0);
 	}
 }
 
@@ -350,6 +370,12 @@ void init_uart_data(uint8_t itf) {
 	mutex_init(&ud->uart_mtx);
 	mutex_init(&ud->usb_mtx);
 
+	/* Activity LED */
+	gpio_init(ui->led_act_pin);
+	gpio_set_dir(ui->led_act_pin, GPIO_OUT);
+	gpio_put(ui->led_act_pin, 0);
+	ud->led_act_ticker = 0;
+
 	if (ui->inst != 0){
 		/* UART start */
 		uart_init(ui->inst, ud->usb_lc.bit_rate);
@@ -380,9 +406,6 @@ int main(void)
 
 	for (itf = 0; itf < CFG_TUD_CDC; itf++)
 		init_uart_data(itf);
-
-	gpio_init(LED_PIN);
-	gpio_set_dir(LED_PIN, GPIO_OUT);
 
 	multicore_launch_core1(core1_entry);
 
