@@ -1,10 +1,11 @@
 Raspberry Pi Pico USB-UART Bridge
 =================================
-This project converts the Raspberry Pi Pico(or any RP2040) into a USB to 6 UART board.
+This project converts the Raspberry Pi Pico(or any RP2040) into a USB to 6 UART board with activity LED.
 
 History
 ----------
-This expands [Noltari's](https://github.com/Noltari/pico-uart-bridge) project to add 4 additional UARTs using the pico PIOs. And expands on [harrywalsh's](https://github.com/harrywalsh/pico-hw_and_pio-uart-gridge) project to provide better SEO and remove some data loss when using all 6 UARTs concurrently.
+
+This expands [JoeSc's](https://github.com/JoeSc/pico-sexa-uart-bridge) project to add activity LED for each UART which itself expands [Noltari's](https://github.com/Noltari/pico-uart-bridge) project to add 4 additional UARTs using the pico PIOs. And expands on [harrywalsh's](https://github.com/harrywalsh/pico-hw_and_pio-uart-gridge) project to provide better SEO and remove some data loss when using all 6 UARTs concurrently.
 
 Disclaimer
 ----------
@@ -19,13 +20,19 @@ The pinout can easily be modified in uart-bridge.c but below is the default
 |:----------------------:|:--------:|
 | GPIO0 (Pin 1)          | UART0 TX |
 | GPIO1 (Pin 2)          | UART0 RX |
+| GPIO2 (Pin 4)          | UART0 LED |
 | GPIO4 (Pin 6)          | UART1 TX |
 | GPIO5 (Pin 7)          | UART1 RX |
+| GPIO3 (Pin 5)          | UART1 LED |
 | GPIO8 (Pin 11)         | UART2 TX |
 | GPIO9 (Pin 12)         | UART2 RX |
+| GPIO6 (Pin 9)          | UART2 LED |
 | GPIO12 (Pin 16)        | UART3 TX |
 | GPIO13 (Pin 17)        | UART3 RX |
+| GPIO7 (Pin 10)         | UART3 LED |
 | GPIO16 (Pin 21)        | UART4 TX |
 | GPIO17 (Pin 22)        | UART4 RX |
+| GPIO10 (Pin 14)        | UART4 LED |
 | GPIO20 (Pin 26)        | UART5 TX |
 | GPIO21 (Pin 27)        | UART5 RX |
+| GPIO11 (Pin 15)        | UART5 LED |
