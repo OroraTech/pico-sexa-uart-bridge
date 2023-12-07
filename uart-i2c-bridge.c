@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: MIT
 /*
  * Copyright 2021 Álvaro Fernández Rojas <noltari@gmail.com>
+ * Copyright (c) 2022 Nicolai Electronics
+ * Copyright (c) 2023 Chris Burton
  */
 
+#include "bsp/board.h"
 #include <hardware/irq.h>
 #include <hardware/structs/sio.h>
 #include <hardware/uart.h>
+#include "hardware/i2c.h"
 #include <hardware/structs/pio.h>
 #include <pico/multicore.h>
 #include <pico/stdlib.h>
@@ -15,6 +19,7 @@
 #include <uart_tx.pio.h>
 #include <hardware/flash.h>
 #include "serial.h"
+#include "kernel_i2c_flags.h"
 
 #if !defined(MIN)
 #define MIN(a, b) ((a > b) ? b : a)
@@ -23,10 +28,41 @@
 // might as well use our RAM
 #define BUFFER_SIZE 2560
 
+// activity LED on duration
+#define LED_TICKER_COUNT 500
+
 #define DEF_BIT_RATE 9600
 #define DEF_STOP_BITS 1
 #define DEF_PARITY 0
 #define DEF_DATA_BITS 8
+
+#define I2C_INST i2c1
+#define I2C_SDA  26
+#define I2C_SCL  27
+
+#define POWER_LED 15
+
+/* commands from USB, must e.g. match command ids in kernel driver */
+#define CMD_ECHO       0
+#define CMD_GET_FUNC   1
+#define CMD_SET_DELAY  2
+#define CMD_GET_STATUS 3
+#define CMD_I2C_IO     4
+#define CMD_I2C_BEGIN  1  // flag fo I2C_IO
+#define CMD_I2C_END    2  // flag fo I2C_IO
+
+const unsigned long i2c_func = I2C_FUNC_I2C | I2C_FUNC_SMBUS_EMUL;
+
+#define STATUS_IDLE        0
+#define STATUS_ADDRESS_ACK 1
+#define STATUS_ADDRESS_NAK 2
+
+static uint8_t i2c_state = STATUS_IDLE;
+
+uint8_t i2c_data[1024] = {0};
+
+uint8_t led_i2c_pin = 14;
+uint32_t led_i2c_ticker;
 
 typedef struct {
 	uart_inst_t *const inst;
@@ -243,6 +279,13 @@ void core1_entry(void)
 				usb_cdc_process(itf);
 			}
 		}
+
+		if (led_i2c_ticker) {
+			gpio_put(led_i2c_pin, 1);
+			led_i2c_ticker--;
+		} else {
+			gpio_put(led_i2c_pin, 0);
+		}
 	}
 }
 
@@ -257,7 +300,7 @@ void uart_read_bytes(uint8_t itf)
 					ud->uart_rx_pos < BUFFER_SIZE) {
 				ud->uart_rx_buffer[ud->uart_rx_pos] = uart_getc(ui->inst);
 				ud->uart_rx_pos++;
-				ud->led_act_ticker = 500;
+				ud->led_act_ticker = LED_TICKER_COUNT;
 			}
 		}
 	} else {
@@ -266,7 +309,7 @@ void uart_read_bytes(uint8_t itf)
 			      ud->uart_rx_pos < BUFFER_SIZE) {
 				ud->uart_rx_buffer[ud->uart_rx_pos] =  uart_rx_program_getc(pio0, ui->sm);
 				ud->uart_rx_pos++;
-				ud->led_act_ticker = 500;
+				ud->led_act_ticker = LED_TICKER_COUNT;
 			}
 		}
 	}
@@ -297,7 +340,7 @@ void uart_write_bytes(uint8_t itf) {
 	    mutex_try_enter(&ud->usb_mtx, NULL)) {
 		const uart_id_t *ui = &UART_ID[itf];
 
-		ud->led_act_ticker = 500;
+		ud->led_act_ticker = LED_TICKER_COUNT;
 
 		if (ui->inst != 0){
 			while (uart_is_writable(ui->inst)&&(ud->usb_to_uart_snd < ud->usb_to_uart_pos)) {
@@ -390,6 +433,96 @@ void init_uart_data(uint8_t itf) {
 	}
 }
 
+bool tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage, tusb_control_request_t const* request) {
+    if (request->bmRequestType_bit.type == TUSB_REQ_TYPE_VENDOR) {
+	led_i2c_ticker = LED_TICKER_COUNT;
+        switch (request->bRequest) {
+            case CMD_ECHO:
+                if (stage != CONTROL_STAGE_SETUP) return true;
+                return tud_control_xfer(rhport, request, (void*) &request->wValue, sizeof(request->wValue));
+            case CMD_GET_FUNC:
+                if (stage != CONTROL_STAGE_SETUP) return true;
+                return tud_control_xfer(rhport, request, (void*) &i2c_func, sizeof(i2c_func));
+                break;
+            case CMD_SET_DELAY:
+                if (stage != CONTROL_STAGE_SETUP) return true;
+                if (request->wValue == 0) {
+                    i2c_set_baudrate(I2C_INST, 100000);  // Use default: 100kHz
+                } else {
+                    int baudrate = 1000000 / request->wValue;
+                    if (baudrate > 400000) baudrate = 400000;  // Limit to 400kHz
+                    i2c_set_baudrate(I2C_INST, baudrate);
+                }
+                return tud_control_status(rhport, request);
+            case CMD_GET_STATUS:
+                if (stage != CONTROL_STAGE_SETUP) return true;
+                return tud_control_xfer(rhport, request, (void*) &i2c_state, sizeof(i2c_state));
+            case CMD_I2C_IO:
+            case CMD_I2C_IO + CMD_I2C_BEGIN:
+            case CMD_I2C_IO + CMD_I2C_END:
+            case CMD_I2C_IO + CMD_I2C_BEGIN + CMD_I2C_END:
+                {
+                    if (stage != CONTROL_STAGE_SETUP && stage != CONTROL_STAGE_DATA) return true;
+                    bool nostop = !(request->bRequest & CMD_I2C_END);
+
+                    //sprintf(buffer, "%s i2c %s at 0x%02x, len = %d, nostop = %d\r\n", (stage != CONTROL_STAGE_SETUP) ? "[D]" : "[S]", (request->wValue & I2C_M_RD)?"rd":"wr", request->wIndex, request->wLength, nostop);
+                    //debug_print(buffer);
+
+                    if (request->wLength > sizeof(i2c_data)) {
+                        return false;  // Prevent buffer overflow in case host sends us an impossible request
+                    }
+
+                    if (stage == CONTROL_STAGE_SETUP) {  // Before transfering data
+                        if (request->wValue & I2C_M_RD) {
+                            // Reading from I2C device
+                            int res = i2c_read_blocking(I2C_INST, request->wIndex, i2c_data, request->wLength, nostop);
+                            if (res == PICO_ERROR_GENERIC) {
+                                i2c_state = STATUS_ADDRESS_NAK;
+                            } else {
+                                i2c_state = STATUS_ADDRESS_ACK;
+                            }
+                        } else if (request->wLength == 0) {  // Writing with length of 0, this is used for bus scanning, do dummy read
+                            uint8_t dummy = 0x00;
+                            int     res   = i2c_read_blocking(I2C_INST, request->wIndex, (void*) &dummy, 1, nostop);
+                            if (res == PICO_ERROR_GENERIC) {
+                                i2c_state = STATUS_ADDRESS_NAK;
+                            } else {
+                                i2c_state = STATUS_ADDRESS_ACK;
+                            }
+                        }
+                        tud_control_xfer(rhport, request, (void*) i2c_data, request->wLength);
+                    }
+
+                    if (stage == CONTROL_STAGE_DATA) {        // After transfering data
+                        if (!(request->wValue & I2C_M_RD)) {  // I2C write operation
+                            int res = i2c_write_blocking(I2C_INST, request->wIndex, i2c_data, request->wLength, nostop);
+                            if (res == PICO_ERROR_GENERIC) {
+                                i2c_state = STATUS_ADDRESS_NAK;
+                            } else {
+                                i2c_state = STATUS_ADDRESS_ACK;
+                            }
+                        }
+                    }
+
+                    return true;
+                }
+            default:
+                if (stage != CONTROL_STAGE_SETUP) return true;
+                break;
+        }
+    } else {
+        if (stage != CONTROL_STAGE_SETUP) return true;
+    }
+
+    return false;  // stall unknown request
+}
+
+bool tud_vendor_control_complete_cb(uint8_t rhport, tusb_control_request_t const* request) {
+    (void) rhport;
+    (void) request;
+    return true;
+}
+
 int main(void)
 {
 	int itf;
@@ -401,6 +534,27 @@ int main(void)
 	tx_offset = pio_add_program(pio1, &uart_tx_program);
 	rxp_offset = pio_add_program(pio0, &uart_rxp_program);
 	txp_offset = pio_add_program(pio1, &uart_txp_program);
+
+	board_init();
+
+	gpio_init(POWER_LED);
+	gpio_set_dir(POWER_LED, GPIO_OUT);
+	gpio_put(POWER_LED, 1);
+
+	gpio_init(I2C_SDA);
+	gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
+	gpio_pull_up(I2C_SDA);
+
+	gpio_init(I2C_SCL);
+	gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
+	gpio_pull_up(I2C_SCL);
+
+	i2c_init(I2C_INST, 100000);
+
+	gpio_init(led_i2c_pin);
+	gpio_set_dir(led_i2c_pin, GPIO_OUT);
+	gpio_put(led_i2c_pin, 0);
+	led_i2c_ticker = 0;
 
 	init_usb_cdc_serial_num();
 
@@ -419,3 +573,4 @@ int main(void)
 
 	return 0;
 }
+

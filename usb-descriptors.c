@@ -15,10 +15,10 @@
 
 #define DESC_STR_MAX 20
 
-#define USBD_VID 0x2E8A /* Raspberry Pi */
-#define USBD_PID 0x000A /* Raspberry Pi Pico SDK CDC */
+#define USBD_VID 0x3171 /* 8086 Consultancy */
+#define USBD_PID 0x0060 /* PicoUART6 */
 
-#define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN * CFG_TUD_CDC)
+#define USBD_DESC_LEN (TUD_CONFIG_DESC_LEN + (TUD_VENDOR_DESC_LEN * CFG_TUD_VENDOR) + (TUD_CDC_DESC_LEN * CFG_TUD_CDC))
 #define USBD_MAX_POWER_MA 500
 
 #define USBD_ITF_CDC_0 0
@@ -26,9 +26,9 @@
 #define USBD_ITF_CDC_2 4
 #define USBD_ITF_CDC_3 6
 #define USBD_ITF_CDC_4 8
-//#define USBD_ITF_MAX 10
 #define USBD_ITF_CDC_5 10
-#define USBD_ITF_MAX 12
+#define USBD_ITF_VENDOR_0 12
+#define USBD_ITF_MAX 13
 
 #define USBD_CDC_0_EP_CMD 0x81
 #define USBD_CDC_1_EP_CMD 0x83
@@ -43,8 +43,7 @@
 #define USBD_CDC_3_EP_OUT 0x07
 #define USBD_CDC_4_EP_OUT 0x09
 #define USBD_CDC_5_EP_OUT 0x0B
-
-
+#define USBD_VENDOR_0_OUT 0x0D
 
 #define USBD_CDC_0_EP_IN 0x82
 #define USBD_CDC_1_EP_IN 0x84
@@ -52,6 +51,7 @@
 #define USBD_CDC_3_EP_IN 0x88
 #define USBD_CDC_4_EP_IN 0x8E // 8D works at 9600, 8E seems to work best
 #define USBD_CDC_5_EP_IN 0x8C 
+#define USBD_VENDOR_0_IN 0x8D
 
 
 
@@ -63,6 +63,7 @@
 #define USBD_STR_PRODUCT 0x02
 #define USBD_STR_SERIAL 0x03
 #define USBD_STR_CDC 0x04
+#define USBD_STR_VENDOR 0x05
 
 static const tusb_desc_device_t usbd_desc_device = {
 	.bLength = sizeof(tusb_desc_device_t),
@@ -109,16 +110,18 @@ static const uint8_t usbd_desc_cfg[USBD_DESC_LEN] = {
 		USBD_CDC_CMD_MAX_SIZE, USBD_CDC_5_EP_OUT, USBD_CDC_5_EP_IN,
 		USBD_CDC_IN_OUT_MAX_SIZE),
 
+	 TUD_VENDOR_DESCRIPTOR(USBD_ITF_VENDOR_0, USBD_STR_VENDOR, USBD_VENDOR_0_OUT, USBD_VENDOR_0_IN, 32),
 
 };
 
 char serial[17];
 
 static char *const usbd_desc_str[] = {
-	[USBD_STR_MANUF] = "Raspberry Pi",
-	[USBD_STR_PRODUCT] = "Pico",
+	[USBD_STR_MANUF] = "8086 Consultancy",
+	[USBD_STR_PRODUCT] = "PicoUART6",
 	[USBD_STR_SERIAL] = serial,
-	[USBD_STR_CDC] = "Board CDC",
+	[USBD_STR_CDC] = "CDC Serial",
+	[USBD_STR_VENDOR] = "i2c-tiny-usb",
 };
 
 const uint8_t *tud_descriptor_device_cb(void)

@@ -13,8 +13,13 @@
 #define CFG_TUSB_RHPORT0_MODE OPT_MODE_DEVICE
 
 #define CFG_TUD_CDC 6
-//#define CFG_TUD_CDC 5
 #define CFG_TUD_CDC_RX_BUFSIZE 1024  // no harm making these bigger I guess
 #define CFG_TUD_CDC_TX_BUFSIZE 1024
+
+#define CFG_TUD_VENDOR 1
+#define CFG_TUD_VENDOR_EPSIZE     32
+#define CFG_TUD_VENDOR_EP_BUFSIZE 512
+#define CFG_TUD_VENDOR_RX_BUFSIZE 512
+#define CFG_TUD_VENDOR_TX_BUFSIZE 512
 
 #endif /* _TUSB_CONFIG_H_ */
