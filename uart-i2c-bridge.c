@@ -36,11 +36,11 @@
 #define DEF_PARITY 0
 #define DEF_DATA_BITS 8
 
-#define I2C_INST i2c1
-#define I2C_SDA  26
-#define I2C_SCL  27
+#define I2C_INST i2c0
+#define I2C_SDA  0
+#define I2C_SCL  1
 
-#define POWER_LED 15
+#define POWER_LED 22
 
 /* commands from USB, must e.g. match command ids in kernel driver */
 #define CMD_ECHO       0
@@ -91,40 +91,41 @@ typedef struct {
 uart_id_t UART_ID[CFG_TUD_CDC] = {
 	{
 		.inst = uart0,
-		.tx_pin = 0,
-		.rx_pin = 1,
-		.led_act_pin = 2,
-	},{
-		.inst = uart1,
-		.tx_pin = 4,
-		.rx_pin = 5,
-		.led_act_pin = 3
-	},{
-		.inst = 0,
-		.tx_pin = 8,
-		.rx_pin = 9,
-		.sm = 0,
-		.led_act_pin = 6,
-	},{
-		.inst = 0,
-		.tx_pin = 12,
-		.rx_pin = 13,
-		.sm = 1,
-		.led_act_pin = 7,
-	},{
-		.inst = 0,
 		.tx_pin = 16,
 		.rx_pin = 17,
-		.sm = 2,
-		.led_act_pin = 10,
-	},{
-		.inst = 0,
-		.tx_pin = 20,
-		.rx_pin = 21,
-		.sm = 3,
-		.led_act_pin = 11,
-	}
-};
+		.led_act_pin = 18,
+	}};
+// 	,{
+// 		.inst = uart1,
+// 		.tx_pin = 4,
+// 		.rx_pin = 5,
+// 		.led_act_pin = 3
+// 	},{
+// 		.inst = 0,
+// 		.tx_pin = 8,
+// 		.rx_pin = 9,
+// 		.sm = 0,
+// 		.led_act_pin = 6,
+// 	},{
+// 		.inst = 0,
+// 		.tx_pin = 12,
+// 		.rx_pin = 13,
+// 		.sm = 1,
+// 		.led_act_pin = 7,
+// 	},{
+// 		.inst = 0,
+// 		.tx_pin = 16,
+// 		.rx_pin = 17,
+// 		.sm = 2,
+// 		.led_act_pin = 10,
+// 	},{
+// 		.inst = 0,
+// 		.tx_pin = 20,
+// 		.rx_pin = 21,
+// 		.sm = 3,
+// 		.led_act_pin = 11,
+// 	}
+// };
 
 uart_data_t UART_DATA[CFG_TUD_CDC];
 
@@ -530,16 +531,16 @@ int main(void)
 	// store our PIO programs in tbe instruction registers
 	// we'll use pio0 for RX and pio1 for tx so only one copy of each is needed
 	// however we'll use a different program to send/receive with parity
-	rx_offset = pio_add_program(pio0, &uart_rx_program);
-	tx_offset = pio_add_program(pio1, &uart_tx_program);
-	rxp_offset = pio_add_program(pio0, &uart_rxp_program);
-	txp_offset = pio_add_program(pio1, &uart_txp_program);
+	// rx_offset = pio_add_program(pio0, &uart_rx_program);
+	// tx_offset = pio_add_program(pio1, &uart_tx_program);
+	// rxp_offset = pio_add_program(pio0, &uart_rxp_program);
+	// txp_offset = pio_add_program(pio1, &uart_txp_program);
 
 	board_init();
 
-	gpio_init(POWER_LED);
-	gpio_set_dir(POWER_LED, GPIO_OUT);
-	gpio_put(POWER_LED, 1);
+	// gpio_init(POWER_LED);
+	// gpio_set_dir(POWER_LED, GPIO_OUT);
+	// gpio_put(POWER_LED, 1);
 
 	gpio_init(I2C_SDA);
 	gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
@@ -558,8 +559,8 @@ int main(void)
 
 	init_usb_cdc_serial_num();
 
-	for (itf = 0; itf < CFG_TUD_CDC; itf++)
-		init_uart_data(itf);
+	// for (itf = 0; itf < CFG_TUD_CDC; itf++)
+	// 	init_uart_data(itf);
 
 	multicore_launch_core1(core1_entry);
 
